@@ -10,4 +10,8 @@ public record Feature(Tile tile, int i, int j) {
   public static Feature floor(int i, int j) {
     return new Feature(Tile.FLOOR, i, j);
   }
+
+  public static Feature door(int i, int j) {
+    return new Feature(Tile.DOOR, i, j);
+  }
 }

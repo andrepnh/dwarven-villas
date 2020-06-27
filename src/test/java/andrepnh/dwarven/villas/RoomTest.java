@@ -1,12 +1,126 @@
 package andrepnh.dwarven.villas;
 
+import static andrepnh.dwarven.villas.Feature.door;
 import static andrepnh.dwarven.villas.Feature.floor;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.stream.IntStream;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 
 class RoomTest {
+  @Test
+  void roomsSplitByDoorsAreNotValid() {
+    var roomDrawing = "---D---";
+    var features = Arrays.asList(
+        floor(0, 0), floor(0, 1), floor(0, 2),
+        door(0, 3),
+        floor(0, 4), floor(0, 5), floor(0, 6));
+    assertThatThrownBy(() -> new Room(features))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(roomDrawing);
+  }
+
+  @Test
+  void bifurcatedRoomsEndingAtADoorAreValid() {
+    var roomDrawing = """
+    D--
+    - -
+    ---""";
+    var features = Arrays.asList(
+        door(0, 0), floor(0, 1), floor(0, 2),
+        floor(1, 0), floor(1, 2),
+        floor(2, 0), floor(2, 1), floor(2, 2));
+    assertThat(new Room(features).toString())
+        .isEqualTo(roomDrawing);
+  }
+
+  @Test
+  void roomsWithDoorsNotAtTheEdgeAreNotValid() {
+    var roomDrawing = """
+    ---
+    -D-
+    - -""";
+    var features = Arrays.asList(
+        floor(0, 0), floor(0, 1), floor(0, 2),
+        floor(1, 0), door(1, 1), floor(1, 2),
+        floor(2, 0), floor(2, 2));
+    assertThatThrownBy(() -> new Room(features))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(roomDrawing);
+  }
+
+  // @Test // Might make more sense when rooms are mixed to grids
+  void doorsNeedOneOrthogonallyAdjacentWall() {
+    var roomDrawing = String.format("---%n-D-%n---");
+    var features = Arrays.asList(
+        floor(0, 0), floor(0, 1), floor(0, 2),
+        floor(1, 0), door(1, 1), floor(1, 2),
+        floor(2, 0), floor(2, 1), floor(2, 2));
+    assertThatThrownBy(() -> new Room(features))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(roomDrawing);
+  }
+
+  @Test
+  void roomDoorsAreOptional() {
+    new Room(floor(0, 0), floor(0, 1), floor(0, 2));
+  }
+
+  @Test
+  void roomsWithDoorsNeedToHaveThemAdjacentToFloor() {
+    // Each D marks an invalid door position (blanks are walls)
+    // DDDDDDD
+    // D     D
+    // D --- D
+    // D     D
+    // DDDDDDD
+    IntStream.range(0, 6)
+        .forEach(i -> {
+          var topOrBottomLine = i == 0 || i == 5;
+          var jValues = topOrBottomLine ? IntStream.range(0, 7) : IntStream.of(0, 6);
+          jValues.forEach(j -> {
+            var roomFeatures = Arrays.asList(door(i, j), floor(2, 2), floor(2, 3), floor(2, 4));
+            assertThatThrownBy(() -> new Room(roomFeatures))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("---")
+                .hasMessageContaining("D");
+          });
+        });
+  }
+
+  @Test
+  void roomsMustHaveAtLeast3FloorTiles() {
+    var invalidRoomDrawing = "D--D";
+    ThrowingCallable invalidRoomSupplier = () -> new Room(
+        ImmutableList.of(door(0, 0), floor(0, 1), floor(0, 2), door(0, 3)));
+    assertThatThrownBy(invalidRoomSupplier)
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(invalidRoomDrawing);
+  }
+
+  @Test
+  void roomsWithADoorAdjacentInAnyDirectionAreValid() {
+    // D marks door locations to test:
+    // DDD
+    // D---
+    // DDD
+    var entranceFloor = floor(1, 1);
+    for (int iOffset = -1; iOffset < 2; iOffset++) {
+      for (int jOffset = -1; jOffset < 2; jOffset++) {
+        var door = door(entranceFloor.i() - iOffset, entranceFloor.j() - jOffset);
+        var roomFeatures = Arrays.asList(door, entranceFloor, floor(1, 2), floor(1, 3));
+        var occupiesAnotherFloor = door.i() == 1 && door.j() >= 1;
+        if (!occupiesAnotherFloor) {
+          new Room(roomFeatures);
+        }
+      }
+    }
+  }
+
   @Test
   void roomsWithOneWidthAreValid() {
     new Room(
@@ -107,7 +221,8 @@ class RoomTest {
 
   @Test
   void roomsWithDiagonallyAdjacentRoomsAreNotValid() {
-    String roomDrawing = "--   " + System.lineSeparator() + "  ---";
+    var roomDrawing = "--   \n"
+        + "  ---";
     ThrowingCallable roomSupplier = () -> new Room(
         floor(0, 0), floor(0, 1),
         floor(1, 2), floor(1, 3), floor(1, 4));

@@ -6,8 +6,9 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.google.common.collect.Sets;
+import io.vavr.Tuple;
+import io.vavr.Tuple2;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -19,6 +20,7 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public record Room(ImmutableList<Feature> features) {
 
@@ -28,9 +30,10 @@ public record Room(ImmutableList<Feature> features) {
         .filter(feature -> feature.tile() == Tile.FLOOR)
         .collect(toImmutableList());
     checkArgument(roomFloor.size() >= 3,
-        "A room cannot have less than 3 floor tiles; got: %s",
-        roomFloor);
-    checkContinuousFloor(roomFloor);
+        "A room cannot have less than 3 floor tiles; got:%n%s",
+        draw(features));
+    checkContinuousFloor(features);
+    checkDoors(features);
   }
 
   public Room(Collection<Feature> features) {
@@ -69,16 +72,44 @@ public record Room(ImmutableList<Feature> features) {
             .mapToObj(j -> featuresArray[i][j])
             .map(feature -> String.valueOf(feature.tile().repr()))
             .collect(Collectors.joining()))
-        .collect(Collectors.joining(System.lineSeparator()));
+        .collect(Collectors.joining("\n"));
+  }
+
+  private void checkDoors(ImmutableList<Feature> features) {
+    Feature[][] featuresArray = fillBlanksWithWalls(features);
+    List<Feature> invalidDoors = features.stream()
+        .filter(f -> f.tile() == Tile.DOOR)
+        .filter(door -> !isAdjacentTo(Tile.FLOOR, door, featuresArray)
+            || !isAtTheEdge(door, featuresArray))
+        .collect(Collectors.toList());
+    checkArgument(invalidDoors.isEmpty(),
+        "These doors are not adjacent to floors or orthogonally adjacent to walls: %s. Room:%s%s",
+        invalidDoors, System.lineSeparator(), draw(features));
+  }
+
+  private boolean isAtTheEdge(Feature door, Feature[][] featuresArray) {
+    return getOrthogonallyAdjacent(door, featuresArray).size() < 4;
+  }
+
+  private boolean isOrthogonallyAdjacentTo(Tile tile, Feature feature, Feature[][] featuresArray) {
+    return getOrthogonallyAdjacent(feature, featuresArray)
+        .stream()
+        .anyMatch(adjacent -> adjacent.tile() == tile);
+  }
+
+  private boolean isAdjacentTo(Tile tile, Feature feature, Feature[][] featuresArray) {
+    return getAdjacent(feature, featuresArray)
+        .stream()
+        .anyMatch(adjacent -> adjacent.tile() == tile);
   }
 
   private void checkContinuousFloor(ImmutableList<Feature> roomFeatures) {
-    Feature firstFloor = roomFeatures.stream()
+    var floors = roomFeatures.stream()
         .filter(feature -> feature.tile() == Tile.FLOOR)
-        .findFirst()
-        .orElseThrow();
+        .collect(Collectors.toList());
+    var firstFloor = floors.get(0);
     Set<Feature> visited = walkOrthogonally(firstFloor, roomFeatures);
-    checkArgument(visited.size() == roomFeatures.size(),
+    checkArgument(visited.size() == floors.size(),
         "Rooms with non-orthogonally adjacent floors are not allowed:\n%s",
         draw(roomFeatures));
   }
@@ -90,8 +121,9 @@ public record Room(ImmutableList<Feature> features) {
     while (!pending.isEmpty()) {
       Feature curr = pending.poll();
       visited.add(curr);
-      List<Feature> unvisited = getOrthogonallyAdjacentAndWalkable(curr, tiles)
+      List<Feature> unvisited = getOrthogonallyAdjacent(curr, tiles)
           .stream()
+          .filter(feature -> feature.tile() == Tile.FLOOR)
           .filter(Predicate.not(visited::contains))
           .collect(Collectors.toList());
       pending.addAll(unvisited);
@@ -99,26 +131,33 @@ public record Room(ImmutableList<Feature> features) {
     return visited;
   }
 
-  private List<Feature> getOrthogonallyAdjacentAndWalkable(Feature curr, Feature[][] features) {
-    var adjacent = new ArrayList<Feature>(4);
+  private Set<Feature> getAdjacent(Feature curr, Feature[][] features) {
+    return Sets.union(
+        getDiagonallyAdjacent(curr, features),
+        getOrthogonallyAdjacent(curr, features));
+  }
 
+  private Set<Feature> getDiagonallyAdjacent(Feature curr, Feature[][] features) {
+    return getFrom(curr,
+        Stream.of(Tuple.of(-1, -1), Tuple.of(-1, 1), Tuple.of(1, -1), Tuple.of(1, 1)),
+        features);
+  }
+
+  private Set<Feature> getOrthogonallyAdjacent(Feature curr, Feature[][] features) {
+    return getFrom(curr,
+        Stream.of(Tuple.of(-1, 0), Tuple.of(1, 0), Tuple.of(0, -1), Tuple.of(0, 1)),
+        features);
+  }
+
+  private Set<Feature> getFrom(Feature curr,
+      Stream<Tuple2<Integer, Integer>> offsets, Feature[][] features) {
     Range<Integer> iBounds = Range.closedOpen(0, features.length);
-    if (iBounds.contains(curr.i() - 1) && features[curr.i() - 1][curr.j()].tile().isWalkable()) {
-      adjacent.add(features[curr.i() - 1][curr.j()]);
-    }
-    if (iBounds.contains(curr.i() + 1) && features[curr.i() + 1][curr.j()].tile().isWalkable()) {
-      adjacent.add(features[curr.i() + 1][curr.j()]);
-    }
-
     Range<Integer> jBounds = Range.closedOpen(0, features[curr.i()].length);
-    if (jBounds.contains(curr.j() - 1) && features[curr.i()][curr.j() - 1].tile().isWalkable()) {
-      adjacent.add(features[curr.i()][curr.j() - 1]);
-    }
-    if (jBounds.contains(curr.j() + 1) && features[curr.i()][curr.j() + 1].tile().isWalkable()) {
-      adjacent.add(features[curr.i()][curr.j() + 1]);
-    }
-
-    return adjacent;
+    return offsets
+        .map(offset -> offset.map((i, j) -> Tuple.of(curr.i() + i, curr.j() + j)))
+        .filter(coords -> iBounds.contains(coords._1) && jBounds.contains(coords._2))
+        .map(coords -> features[coords._1][coords._2])
+        .collect(Collectors.toSet());
   }
 
   private Feature[][] fillBlanksWithWalls(Collection<Feature> features) {
