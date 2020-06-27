@@ -29,7 +29,7 @@ tasks.withType<JavaCompile>().forEach {
 
 tasks.test {
     useJUnitPlatform()
-    jvmArgs = listOf("--enable-preview")
+    jvmArgs = listOf("--enable-preview", "-XX:+ShowCodeDetailsInExceptionMessages")
 }
 
 application {

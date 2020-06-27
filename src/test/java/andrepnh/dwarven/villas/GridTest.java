@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import andrepnh.dwarven.villas.Grid.Bounds;
-import andrepnh.dwarven.villas.Grid.Tile;
 import com.google.common.collect.Lists;
 import io.vavr.Tuple;
 import io.vavr.Tuple2;

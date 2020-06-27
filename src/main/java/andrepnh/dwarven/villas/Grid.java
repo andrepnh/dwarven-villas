@@ -89,10 +89,6 @@ public class Grid {
     }
   }
 
-  public enum Tile {
-    WALL, FLOOR, DOOR, STAIR
-  }
-
   public record Bounds(int width, int height) {
     public Bounds {
       checkArgument(width > 0, "Width <= 0: %s", width);
